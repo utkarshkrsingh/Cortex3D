@@ -12,8 +12,8 @@ VOXEL_SIZE = 32
 
 # --- Paths (Configured for Google Colab) ---
 # Note: Ensure your Google Drive is mounted at /content/drive
-BASE_DRIVE_PATH = "/content/drive/MyDrive/"
-DATA_PATH = os.path.join(BASE_DRIVE_PATH, "ModelNet10_rendered/")
+BASE_DRIVE_PATH = "/content/"
+DATA_PATH = os.path.join(BASE_DRIVE_PATH, "ModelNet10/")
 SAVE_PATH = os.path.join(BASE_DRIVE_PATH, "pix2vox_outputs/")
 
 # --- Debugging ---
