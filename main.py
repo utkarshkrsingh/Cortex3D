@@ -18,7 +18,7 @@ import torch.nn as nn
 def main():
     # --- Step 1: Transformations ---
     transform = transforms.Compose(
-        [transforms.Resize((IMG_SIZE, IMG_size)), transforms.ToTensor()]
+        [transforms.Resize((IMG_SIZE, IMG_SIZE)), transforms.ToTensor()]
     )
 
     # --- Step 2: Load dataset ---
