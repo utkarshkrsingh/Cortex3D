@@ -2,35 +2,40 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from src.model import Pix2VoxMini
-from src.config import *
-from src.utils import plot_loss_curve
+import os
+from tqdm import tqdm  # A library to create smart progress bars
+
+# --- Make sure you have a function to calculate IoU in utils.py ---
+from .utils import plot_loss_curve, calculate_iou
+from .config import *  # Import all config variables
+
+# ==========================================================================================
+# Epoch-Level Functions
+# ==========================================================================================
 
 
 def train_one_epoch(model, loader, criterion, optimizer, device):
-    """
-    Runs one epoch of training
-    """
+    """Runs one epoch of training."""
     model.train()
-    epoch_loss = 0
+    epoch_loss = 0.0
 
-    for batch_idx, (images, voxels) in enumerate(loader):
-        # Move data to GPU/CPU
+    # Use tqdm for a progress bar
+    for i, (images, voxels) in enumerate(tqdm(loader, desc="Training")):
         images, voxels = images.to(device), voxels.to(device)
-
-        # Debugging shapes (only on first batch of first epoch)
-        if batch_idx == 0:
-            print(f"[DEBUG] Images shape: {images.shape}")  # Expected: [B, 3, 128, 128]
-            print(f"[DEBUG] Voxels shape: {voxels.shape}")  # Expected: [B, 32, 32, 32]
 
         # Reset gradients
         optimizer.zero_grad()
 
         # Forward pass
-        outputs = model(images)  # [B, 1, 32, 32, 32]
+        outputs = model(images)
 
-        # Voxels need a channel dimension for BCELoss
-        loss = criterion(outputs, voxels.unsqueeze(1))
+        # Ensure target voxels have the same shape as outputs [B, 1, D, H, W]
+        # NOTE: If your dataloader already returns [B, 1, D, H, W], remove .unsqueeze(1)
+        if voxels.dim() == 4:
+            voxels = voxels.unsqueeze(1)
+
+        # Calculate loss
+        loss = criterion(outputs, voxels)
 
         # Backpropagation
         loss.backward()
@@ -38,42 +43,91 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
 
         epoch_loss += loss.item()
 
+        # --- Suggestion 3: Implement DEBUG mode ---
+        if DEBUG and i >= DEBUG_BATCHES - 1:
+            print("[DEBUG] Stopping epoch early due to DEBUG mode.")
+            break
+
     return epoch_loss / len(loader)
 
 
-def train_model(train_loader):
-    """
-    Main training function that:
-    - Initializes model, optimizer, loss function
-    - Runs for specified epochs
-    - Saves trained model
-    - Returns trained model
-    """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"[INFO] Training on {device}")
+def validate_one_epoch(model, loader, criterion, device):
+    """Runs one epoch of validation."""
+    model.eval()
+    epoch_loss = 0.0
+    all_iou_scores = []
 
-    # Initialize model
-    model = Pix2VoxMini().to(device)
+    with torch.no_grad():  # Disable gradient calculation
+        for i, (images, voxels) in enumerate(tqdm(loader, desc="Validation")):
+            images, voxels = images.to(device), voxels.to(device)
 
-    # Binary Cross-Entropy Loss for voxel occupancy
-    criterion = nn.BCELoss()
+            # Forward pass
+            outputs = model(images)
 
-    # Adam optimizer
-    optimizer = optim.Adam(model.parameters(), lr=LR)
+            # Ensure target voxels have the same shape as outputs
+            if voxels.dim() == 4:
+                voxels = voxels.unsqueeze(1)
 
-    train_losses = []
+            # Calculate loss
+            loss = criterion(outputs, voxels)
+            epoch_loss += loss.item()
 
-    # Training loop
+            # --- Suggestion 1: Calculate IoU metric ---
+            iou = calculate_iou(outputs, voxels)
+            all_iou_scores.append(iou)
+
+            if DEBUG and i >= DEBUG_BATCHES - 1:
+                print("[DEBUG] Stopping validation early due to DEBUG mode.")
+                break
+
+    avg_loss = epoch_loss / len(loader)
+    avg_iou = torch.mean(torch.tensor(all_iou_scores))
+    return avg_loss, avg_iou
+
+
+# ==========================================================================================
+# Main Training Orchestrator
+# ==========================================================================================
+
+
+# --- Suggestion 2: Refactor for better flexibility ---
+def train_model(model, train_loader, val_loader, optimizer, criterion, device):
+    """Main training function."""
+
+    train_losses, val_losses, val_ious = [], [], []
+    best_val_iou = 0.0
+
+    print("[INFO] Starting training...")
     for epoch in range(EPOCHS):
-        avg_loss = train_one_epoch(model, train_loader, criterion, optimizer, device)
-        train_losses.append(avg_loss)
-        print(f"[INFO] Epoch [{epoch + 1}/{EPOCHS}] Loss: {avg_loss:.4f}")
+        # Training step
+        avg_train_loss = train_one_epoch(
+            model, train_loader, criterion, optimizer, device
+        )
+        train_losses.append(avg_train_loss)
 
-    # Plot loss curve after training
-    plot_loss_curve(train_losses)
+        # Validation step
+        avg_val_loss, avg_val_iou = validate_one_epoch(
+            model, val_loader, criterion, device
+        )
+        val_losses.append(avg_val_loss)
+        val_ious.append(avg_val_iou)
 
-    # Save trained model
-    torch.save(model.state_dict(), "pix2vox_mini.pth")
-    print("[INFO] Model saved as pix2vox_mini.pth")
+        print(
+            f"[INFO] Epoch [{epoch + 1}/{EPOCHS}] | "
+            f"Train Loss: {avg_train_loss:.4f} | "
+            f"Val Loss: {avg_val_loss:.4f} | "
+            f"Val IoU: {avg_val_iou:.4f}"
+        )
+
+        # Save the model if it has the best validation IoU so far
+        if avg_val_iou > best_val_iou:
+            best_val_iou = avg_val_iou
+            save_path = os.path.join(SAVE_PATH, "best_model.pth")
+            torch.save(model.state_dict(), save_path)
+            print(f"[INFO] Model saved to {save_path} (IoU: {best_val_iou:.4f})")
+
+    # Plotting after training is complete
+    plot_loss_curve(train_losses, val_losses)
+    print(f"[INFO] Training complete. Best validation IoU: {best_val_iou:.4f}")
 
     return model

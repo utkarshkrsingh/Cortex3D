@@ -1,6 +1,19 @@
+# requirements.txt
+
+# --- Core Deep Learning & Vision ---
 torch
 torchvision
+
+# --- Numerical & Data Handling ---
 numpy
-matplotlib
-pillow
+pillow  # For image processing (PIL)
+
+# --- 3D Data Processing ---
 open3d
+
+# --- Plotting & Visualization ---
+matplotlib
+
+# --- Utilities & Testing ---
+tqdm    # For progress bars in training loops
+pytest   # For running automated tests
