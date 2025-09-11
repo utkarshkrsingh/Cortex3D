@@ -4,7 +4,9 @@ import time
 from src.dataset import ModelNetSingleViewDataset
 
 # --- Import your model, optimizer, and loss ---
-from src.model import ReconstructionNet  # Assuming your model class is named this
+from src.model import (
+    SingleViewReconstructionNet,
+)  # Assuming your model class is named this
 from src.train import train_model
 from src.config import *
 from torchvision import transforms
